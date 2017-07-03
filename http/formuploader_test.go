@@ -103,9 +103,9 @@ func shutdown(server *http.Server) {
 	log.Printf("--- DONE ---")
 }
 
-func doUpload(fu FormUploader, failOnError bool, t *testing.T) {
+func doSubmit(submit func(string) (*http.Response, error), failOnError bool, t *testing.T) {
 	url := serverHost + serverPort + uploadTarget
-	resp, err := fu.Post(url)
+	resp, err := submit(url)
 	if err != nil {
 		if failOnError {
 			t.Fatal(err)
@@ -136,7 +136,7 @@ func TestFieldsOnly(t *testing.T) {
 	fu.AddField("description", "Custom information")
 
 	//perform upload
-	doUpload(fu, true, t)
+	doSubmit(fu.Post, true, t)
 }
 
 func TestSingleFileOnly(t *testing.T) {
@@ -144,7 +144,7 @@ func TestSingleFileOnly(t *testing.T) {
 	fu.AddFiles(fileField, dataDir+"image01.jpg")
 
 	//perform upload
-	doUpload(fu, true, t)
+	doSubmit(fu.Post, true, t)
 }
 
 func TestMultipleFilesOnly(t *testing.T) {
@@ -158,7 +158,7 @@ func TestMultipleFilesOnly(t *testing.T) {
 	fu.AddFiles(fileField, files...)
 
 	//perform upload
-	doUpload(fu, true, t)
+	doSubmit(fu.Post, true, t)
 }
 
 func TestFilesWithFields(t *testing.T) {
@@ -177,7 +177,27 @@ func TestFilesWithFields(t *testing.T) {
 	fu.AddFiles(fileField, files...)
 
 	//perform upload
-	doUpload(fu, true, t)
+	doSubmit(fu.Post, true, t)
+}
+
+func TestPutFilesWithFields(t *testing.T) {
+	fu := NewFormUploader()
+
+	//Add fields
+	fu.AddField("id", "File and custom files")
+	fu.AddField("time", time.Now().Format(time.RFC3339))
+	fu.AddField("description", "Custom information")
+
+	files := []string{
+		dataDir + "image01.jpg",
+		dataDir + "file01.txt",
+		dataDir + "conflict/file01.txt",
+		dataDir + "file02.pdf",
+	}
+	fu.AddFiles(fileField, files...)
+
+	//perform upload: PUT
+	doSubmit(fu.Put, true, t)
 }
 
 func TestFileDoesNotExist(t *testing.T) {
@@ -189,5 +209,5 @@ func TestFileDoesNotExist(t *testing.T) {
 	fu.AddFiles(fileField, files...)
 
 	//perform upload
-	doUpload(fu, false, t)
+	doSubmit(fu.Post, false, t)
 }
