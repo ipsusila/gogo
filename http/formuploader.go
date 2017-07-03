@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 )
 
-//FormUploader encapsulates HTTP multipart form.
+//FormUploader represents HTTP multipart form submission.
 type FormUploader interface {
 	AddField(name, value string) FormUploader
 	AddFields(fields map[string]string) FormUploader
@@ -21,6 +21,8 @@ type FormUploader interface {
 	ChunkSize() int64
 	Post(targetURL string) (*http.Response, error)
 	Put(targetURL string) (*http.Response, error)
+	PostWith(client *http.Client, targetURL string) (*http.Response, error)
+	PutWith(client *http.Client, targetURL string) (*http.Response, error)
 }
 
 type formPart interface {
@@ -59,7 +61,7 @@ func NewFormUploader() FormUploader {
 	return &formUploader{chunkSize: 1024 * 10}
 }
 
-//write all the data to writer
+//Write all the data to writer.
 func writeExactly(w io.Writer, data []byte) error {
 	if ndata := len(data); ndata > 0 {
 		nw := 0
@@ -257,12 +259,18 @@ func (fu *formUploader) ChunkSize() int64 {
 	return fu.chunkSize
 }
 func (fu *formUploader) Post(targetURL string) (*http.Response, error) {
-	return fu.submit(targetURL, "POST")
+	return fu.submit(http.DefaultClient, targetURL, "POST")
 }
 func (fu *formUploader) Put(targetURL string) (*http.Response, error) {
-	return fu.submit(targetURL, "PUT")
+	return fu.submit(http.DefaultClient, targetURL, "PUT")
 }
-func (fu *formUploader) submit(targetURL, method string) (*http.Response, error) {
+func (fu *formUploader) PostWith(client *http.Client, targetURL string) (*http.Response, error) {
+	return fu.submit(client, targetURL, "POST")
+}
+func (fu *formUploader) PutWith(client *http.Client, targetURL string) (*http.Response, error) {
+	return fu.submit(client, targetURL, "PUT")
+}
+func (fu *formUploader) submit(client *http.Client, targetURL, method string) (*http.Response, error) {
 	buf := &bytes.Buffer{}
 	mpw := multipart.NewWriter(buf)
 
@@ -276,7 +284,7 @@ func (fu *formUploader) submit(targetURL, method string) (*http.Response, error)
 	}
 	parts = append(parts, &endPart{})
 
-	//create parts and calculate size
+	//create parts and calculate size.
 	totalContentLen := int64(0)
 	for _, p := range parts {
 		n, err := p.newPart(buf, mpw)
@@ -286,14 +294,17 @@ func (fu *formUploader) submit(targetURL, method string) (*http.Response, error)
 		totalContentLen += n
 	}
 
-	//close form parts when done
+	//close form parts when done.
 	defer func() {
 		for _, p := range parts {
 			p.close()
 		}
 	}()
 
-	//reader writer
+	//Pipe for connecting reader and writer.
+	//Reader side will be connected to request,
+	//while writer side will be used for writing
+	//multipart form content.
 	reader, writer := io.Pipe()
 	defer reader.Close()
 
@@ -302,6 +313,7 @@ func (fu *formUploader) submit(targetURL, method string) (*http.Response, error)
 	go func() {
 		defer writer.Close()
 
+		//allocate buffer for reading file.
 		chunk := make([]byte, fu.chunkSize)
 		for _, p := range parts {
 			if err := p.writeTo(chunk, writer); err != nil {
@@ -320,7 +332,6 @@ func (fu *formUploader) submit(targetURL, method string) (*http.Response, error)
 	req.ContentLength = totalContentLen
 
 	//process request
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
