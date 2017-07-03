@@ -230,7 +230,7 @@ func (fu *formUploader) AddFiles(fieldName string, filesPath ...string) error {
 				baseNames[name] = true
 				break
 			}
-			name = fmt.Sprintf("%03d_%s", n, baseName)
+			name = fmt.Sprintf("_%03d_%s", n, baseName)
 		}
 
 		fp := &filePart{
